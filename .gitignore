@@ -1,0 +1,32 @@
+# -----------------------------------------------------------
+# Node.js Project .gitignore
+# -----------------------------------------------------------
+node_modules/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.parcel-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.DS_Store
+.env
+.env.*
+npm-shrinkwrap.json
+*.tgz
+*.iml
+.idea/
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+coverage/
+.nyc_output/
+*.swp
+.history/
+.temp/
+/public/uploads/
+*.db
