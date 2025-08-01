@@ -57,7 +57,7 @@ module.exports = {
 
         // --- Python 项目忽略项 ---
         '__pycache__/',         // Python 字节码缓存目录
-        '.venv/',               // 虚拟环境目录 (或 venv/)
+        'venv/',               // 虚拟环境目录 (或 venv/)
         'env/',                 // 另一种虚拟环境目录命名
         '*.pyc',                // Python 编译缓存文件
         '*.pyd',                // Windows 下的 Python 动态库
@@ -97,6 +97,8 @@ module.exports = {
         '.gitignore',
 
         'pingfang/',
+        'm3e/',
+        'ner_model_bert/',
         
         // --- 图片和矢量图文件 (保留这些通用规则，以防万一有其他非 ignoredPaths 中的图片) ---
         '*.jpg',
@@ -110,7 +112,13 @@ module.exports = {
         '*.avif',
 
         // --- 项目特定内容忽略项 ---
+        "Cargo.lock",
+        "schemas/",
+        "*.icns",
         'pom.xml',
+        'hei-normal.js',
+        'auto-imports.d.ts',
+        'components.d.ts',
         'gradle.properties',
         'build.gradle',
         'settings.gradle',

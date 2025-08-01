@@ -30,3 +30,4 @@ coverage/
 .temp/
 /public/uploads/
 *.db
+/output

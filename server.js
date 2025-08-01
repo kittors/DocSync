@@ -7,15 +7,15 @@ const config = require('./config');
 // 从命令行参数获取目标目录
 const commandLineTargetDir = process.argv[2];
 // 从命令行参数获取输出Markdown文件路径
-const commandLineOutputMarkdownPath = process.argv[3]; // 新增：获取第三个参数
+const commandLineOutputMarkdownPath = process.argv[3];
 
 // 确定最终的 targetDirectory：命令行参数 > config.js 中的配置
 const targetDirectory = commandLineTargetDir || config.targetDirectory;
 
 // 确定最终的 outputMarkdownPath：命令行参数 > config.js 中的配置
-const outputMarkdownPath = commandLineOutputMarkdownPath || config.outputMarkdownPath; // 新增：优先级判断
+const outputMarkdownPath = commandLineOutputMarkdownPath || config.outputMarkdownPath;
 
-const { ignoredPaths, ignoredContentPaths } = config; // 这里不再从 config 中解构 outputMarkdownPath
+const { ignoredPaths, ignoredContentPaths } = config;
 
 // 确保目标目录存在，否则会报错
 if (!fs.existsSync(targetDirectory)) {
@@ -31,42 +31,49 @@ if (!fs.existsSync(targetDirectory)) {
  * @returns {boolean} - 如果路径应该被忽略，则返回 true
  * @description
  * 此函数基于原子设计原则，将路径忽略逻辑分解为最小单元。
- * 它处理文件扩展名通配符、精确文件名匹配以及目录的任意层级匹配。
- * 对于目录，它会检查相对路径的任何段是否与忽略规则匹配，确保深层嵌套的目录也能被正确识别。
- * 对于文件，它将严格执行精确文件名匹配，避免非预期的部分匹配。
+ * 它能处理目录的任意层级匹配，以及文件的精确或通配符匹配。
+ * 对于文件规则，它会将简单的通配符（如 '*.png'）转换为正则表达式，以实现灵活的匹配。
  */
 function isPathIgnored(relativePath, fileName, ignoreList) {
-    const pathParts = relativePath.split(path.sep); // 将相对路径拆分为段，用于更细粒度的匹配
+    const pathParts = relativePath.split(path.sep);
+    const listName = ignoreList === ignoredPaths ? 'ignoredPaths' : 'ignoredContentPaths'; // 用于日志
+    let matchedRule = null; // 存储匹配到的规则
 
-    return ignoreList.some(p => {
+    const shouldIgnore = ignoreList.some(p => {
         let normalizedP = p.startsWith('./') ? p.substring(2) : p;
 
         const isRuleADirectory = normalizedP.endsWith('/');
         if (isRuleADirectory) {
-            normalizedP = normalizedP.substring(0, normalizedP.length - 1); // 移除尾部斜杠，以便进行更灵活的路径匹配
-        }
-
-        // 1. 处理文件扩展名通配符 (*.ext)
-        if (normalizedP.startsWith('*') && normalizedP.length > 1 && normalizedP.indexOf('.') === 1) {
-            const ext = normalizedP.substring(2);
-            return path.extname(fileName) === '.' + ext;
-        }
-
-        // 2. 处理目录或文件名的匹配
-        if (isRuleADirectory) {
-            // 如果规则是目录 (如 'node_modules/')
+            normalizedP = normalizedP.substring(0, normalizedP.length - 1); // 移除尾部斜杠
             // 检查相对路径的任何一个部分是否与被忽略的目录名匹配
-            // 例如：'packages/flowtable-react-demo/node_modules' 应该匹配 'node_modules'
-            // 确保匹配的是完整的目录名，而不是子字符串
-            return pathParts.some(part => part === normalizedP);
+            const match = pathParts.some(part => part === normalizedP);
+            if (match) {
+                matchedRule = p; // 记录匹配到的规则
+            }
+            return match;
         } else {
-            // 如果规则是文件 (如 '.DS_Store' 或 'pom.xml')
-            // **核心修改：对于文件规则，只进行精确的文件名匹配**
-            // 这样可以避免像 'package-lock.json' 意外匹配 'package.json' 的情况
-            return fileName === normalizedP;
+            // 如果规则是文件 (如 '.DS_Store', 'pom.xml', 或 '*.png')
+            // [修复] 将简单的通配符模式转换为正则表达式以进行匹配。
+            // 这使得像 '*.png' 这样的规则可以正常工作。
+            // 我们将 '*' 替换为 '.*' (匹配任意数量的任意字符), 将 '.' 替换为 '\.' (匹配字面上的点)。
+            const regexPattern = '^' + normalizedP.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
+            const regex = new RegExp(regexPattern);
+            const match = regex.test(fileName); // 使用正则表达式测试文件名
+
+            if (match) {
+                matchedRule = p; // 记录匹配到的规则
+            }
+            return match;
         }
     });
+
+    // 为了调试方便，保留日志输出
+    if (shouldIgnore) {
+        // console.log(`[DEBUG] Path "${relativePath}" (file: "${fileName}") is ${listName === 'ignoredPaths' ? 'COMPLETELY IGNORED' : 'CONTENT IGNORED'} by rule "${matchedRule}"`);
+    }
+    return shouldIgnore;
 }
+
 
 /**
  * 递归获取目录结构
@@ -83,7 +90,7 @@ async function getDirectoryStructure(dir, prefix = '') {
         const filePath = path.join(dir, file);
         const relativePath = path.relative(targetDirectory, filePath);
 
-        // 使用新的辅助函数检查是否应该忽略
+        // 使用辅助函数检查是否应该完全忽略
         if (isPathIgnored(relativePath, file, ignoredPaths)) {
             continue; // 跳过被忽略的文件或目录
         }
@@ -114,33 +121,34 @@ async function getFileContents(dir, contents = []) {
         const filePath = path.join(dir, file);
         const relativePath = path.relative(targetDirectory, filePath);
 
-        // 使用新的辅助函数检查是否应该完全忽略
+        // 检查是否应该完全忽略 (ignoredPaths)
         if (isPathIgnored(relativePath, file, ignoredPaths)) {
             continue;
         }
 
-        // 检查是否在 ignoredContentPaths 中（只忽略内容）
-        const shouldIgnoreContent = isPathIgnored(relativePath, file, ignoredContentPaths);
-
         const stats = await fs.stat(filePath);
 
         if (stats.isFile()) {
+            // 检查是否在 ignoredContentPaths 中（只忽略内容）
+            const shouldIgnoreContent = isPathIgnored(relativePath, file, ignoredContentPaths);
+
             if (!shouldIgnoreContent) {
                 const content = await fs.readFile(filePath, 'utf8');
                 // 尝试根据文件扩展名添加代码块语言
                 const ext = path.extname(file).substring(1); // 获取扩展名，去除前导点
                 let language = ext;
-                if (ext === 'js' || ext === 'jsx') language = 'javascript';
-                if (ext === 'ts' || ext === 'tsx') language = 'typescript';
-                if (ext === 'py') language = 'python';
-                if (ext === 'java') language = 'java';
-                if (ext === 'json') language = 'json';
-                if (ext === 'html') language = 'html';
-                if (ext === 'css') language = 'css';
-                if (ext === 'scss') language = 'scss';
-                if (ext === 'vue') language = 'vue';
-                if (ext === 'md') language = 'markdown';
-                // 可以根据需要添加更多语言映射
+                // 语言映射表
+                const langMap = {
+                    js: 'javascript', jsx: 'javascript',
+                    ts: 'typescript', tsx: 'typescript',
+                    py: 'python', java: 'java',
+                    json: 'json', html: 'html',
+                    css: 'css', scss: 'scss',
+                    vue: 'vue', md: 'markdown',
+                    sh: 'bash', yml: 'yaml',
+                    xml: 'xml'
+                };
+                language = langMap[ext] || ext;
 
                 contents.push(`\n### ${relativePath}\n\n\`\`\`${language}\n${content}\n\`\`\`\n`);
             } else {
@@ -199,6 +207,8 @@ const watcher = chokidar.watch(targetDirectory, {
         if (relativePath === '') return false; // 不忽略根目录本身
 
         const fileName = path.basename(itemPath); // 获取文件名用于匹配
+        // Chokidar 的 ignored 选项只接受一个函数，这个函数应该判断是否完全忽略
+        // 所以这里只使用 ignoredPaths 列表
         return isPathIgnored(relativePath, fileName, ignoredPaths);
     },
     ignoreInitial: true,
